@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Alquiler de Consolas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#15121C;
+    --surface:#1E1A28;
+    --surface-2:#272233;
+    --surface-3:#302A40;
+    --border:#3A3350;
+    --text:#F1ECFA;
+    --text-dim:#A79BC2;
+    --text-faint:#7A6F94;
+    --accent:#F2A63D;
+    --accent-dark:#C9821F;
+    --accent-soft:rgba(242,166,61,.14);
+    --mint:#4FD1A5;
+    --mint-soft:rgba(79,209,165,.14);
+    --rose:#F0607A;
+    --rose-soft:rgba(240,96,122,.14);
+    --blue:#5B8DEF;
+    --green:#63C368;
+    --pink:#E9577D;
+    --purple:#A78BFA;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{display:flex;min-height:100vh;}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:216px;flex-shrink:0;
+    background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+    padding:22px 14px;
+    position:sticky;top:0;height:100vh;
+  }
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;font-size:17px;
+    padding:0 8px 22px 8px;
+    line-height:1.25;
+    color:var(--text);
+  }
+  .brand span{color:var(--accent);}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 12px;border-radius:10px;
+    color:var(--text-dim);font-weight:500;font-size:13.5px;
+    cursor:pointer;margin-bottom:4px;
+    transition:background .15s, color .15s;
+    user-select:none;
+  }
+  .nav-item:hover{background:var(--surface-2);color:var(--text);}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent);}
+  .nav-item .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7;flex-shrink:0;}
+  .sidebar-foot{margin-top:auto;padding:10px 8px 0 8px;font-size:11px;color:var(--text-faint);border-top:1px solid var(--border);padding-top:14px;}
+
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;padding:24px 30px 60px 30px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px;flex-wrap:wrap;}
+  .page-title{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;}
+  .rate-pill{
+    display:flex;align-items:center;gap:10px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;padding:8px 14px;font-size:13px;
+  }
+  .rate-pill .lbl{color:var(--text-dim);}
+  .rate-pill .val{font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;}
+  .rate-pill button{
+    background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);
+    border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;
+  }
+  .rate-pill button:hover{color:var(--text);border-color:var(--accent);}
+  .rate-pill .updated{color:var(--text-faint);font-size:11px;}
+
+  /* ---------- Cards / grid ---------- */
+  .grid{display:grid;gap:14px;}
+  .stations-grid{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));}
+  .card{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;padding:16px;
+  }
+  .btn{
+    border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;
+    cursor:pointer;font-family:inherit;transition:filter .12s, transform .05s;
+  }
+  .btn:active{transform:scale(.97);}
+  .btn-primary{background:var(--accent);color:#1C1408;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:var(--surface-2);color:var(--text);border:1px solid var(--border);}
+  .btn-ghost:hover{border-color:var(--text-faint);}
+  .btn-danger{background:var(--rose-soft);color:var(--rose);}
+  .btn-danger:hover{filter:brightness(1.15);}
+  .btn-mint{background:var(--mint-soft);color:var(--mint);}
+  .btn-sm{padding:6px 10px;font-size:12px;border-radius:7px;}
+  .btn-block{width:100%;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+
+  /* station card */
+  .station-card{position:relative;overflow:hidden;}
+  .station-card .accent-bar{position:absolute;left:0;top:0;bottom:0;width:4px;}
+  .station-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
+  .station-name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;}
+  .console-tag{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    padding:3px 9px;border-radius:100px;margin-top:4px;
+  }
+  .status-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:100px;letter-spacing:.2px;}
+  .status-badge.free{background:var(--mint-soft);color:var(--mint);}
+  .status-badge.busy{background:var(--rose-soft);color:var(--rose);}
+  .timer{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:28px;
+    font-variant-numeric:tabular-nums;margin:10px 0 2px 0;
+  }
+  .timer.over{color:var(--rose);}
+  .timer-sub{color:var(--text-dim);font-size:12px;margin-bottom:12px;}
+  .station-cost{font-size:13px;color:var(--text-dim);margin-bottom:12px;}
+  .station-cost b{color:var(--text);font-family:'Space Grotesk',sans-serif;}
+  .station-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .station-actions .btn{flex:1;min-width:80px;}
+  .icon-x{
+    background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:15px;padding:2px 4px;
+    border-radius:6px;line-height:1;
+  }
+  .icon-x:hover{color:var(--rose);background:var(--surface-2);}
+
+  .empty{
+    border:1.5px dashed var(--border);border-radius:14px;padding:40px 20px;text-align:center;color:var(--text-faint);
+  }
+  .empty .btn{margin-top:12px;}
+
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(9,7,14,.62);
+    display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;
+  }
+  .modal{
+    background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    width:100%;max-width:380px;padding:20px;max-height:86vh;overflow-y:auto;
+  }
+  .modal.wide{max-width:460px;}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .modal-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:6px;font-weight:500;}
+  .field input, .field select{
+    width:100%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);
+    border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit;
+  }
+  .field input:focus, .field select:focus{outline:none;border-color:var(--accent);}
+  .field .hint{font-size:11px;color:var(--text-faint);margin-top:5px;}
+  .seg{display:flex;gap:6px;flex-wrap:wrap;}
+  .seg button{
+    flex:1;min-width:52px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);
+    border-radius:8px;padding:8px 6px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .seg button.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+  .paytabs{display:flex;gap:6px;margin-bottom:14px;background:var(--surface-2);padding:4px;border-radius:10px;}
+  .paytabs button{
+    flex:1;border:none;background:transparent;color:var(--text-dim);padding:8px 4px;border-radius:7px;
+    font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .paytabs button.active{background:var(--surface-3);color:var(--accent);}
+  .summary-box{
+    background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;
+  }
+  .summary-row{display:flex;justify-content:space-between;padding:3px 0;color:var(--text-dim);}
+  .summary-row b{color:var(--text);font-family:'Space Grotesk',sans-serif;}
+  .summary-total{border-top:1px solid var(--border);margin-top:6px;padding-top:8px;font-size:15px;}
+  .summary-total b{color:var(--accent);font-size:17px;}
+  .modal-actions{display:flex;gap:8px;margin-top:16px;}
+  .modal-actions .btn{flex:1;}
+  .close-x{background:none;border:none;color:var(--text-faint);font-size:18px;cursor:pointer;}
+
+  /* ---------- Dashboard ---------- */
+  .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;}
+  .kpi{padding:18px;}
+  .kpi .lbl{color:var(--text-dim);font-size:12px;margin-bottom:8px;}
+  .kpi .val{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;}
+  .kpi .val.usd{color:var(--accent);}
+  .kpi .val.bs{color:var(--mint);}
+  .section-title{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:15px;margin:26px 0 12px 0;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--text-faint);font-weight:600;font-size:11.5px;text-transform:none;padding:8px 10px;border-bottom:1px solid var(--border);}
+  td{padding:10px 10px;border-bottom:1px solid var(--surface-2);color:var(--text-dim);}
+  td.strong{color:var(--text);font-family:'Space Grotesk',sans-serif;font-weight:600;}
+  tr:last-child td{border-bottom:none;}
+  .bar-track{background:var(--surface-2);border-radius:5px;height:8px;width:100%;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:5px;}
+  .filter-toggle{display:flex;gap:6px;}
+  .filter-toggle button{
+    background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);
+    padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  .filter-toggle button.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);}
+
+  /* config */
+  .cfg-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface-2);border-radius:10px;margin-bottom:8px;}
+  .cfg-row .name{flex:1;font-weight:600;}
+  .cfg-row input{width:90px;background:var(--surface-3);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-size:13px;}
+
+  .toast{
+    position:fixed;bottom:22px;right:22px;background:var(--surface-3);border:1px solid var(--border);
+    color:var(--text);padding:12px 16px;border-radius:10px;font-size:13px;z-index:200;
+    box-shadow:0 8px 24px rgba(0,0,0,.3);
+    max-width:320px;
+  }
+  .toast.err{border-color:var(--rose);color:var(--rose);}
+  .muted{color:var(--text-faint);font-size:12px;}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  @media (max-width:720px){
+    .sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;height:auto;width:100%;
+      flex-direction:row;justify-content:space-around;padding:8px;border-right:none;border-top:1px solid var(--border);z-index:50;}
+    .brand,.sidebar-foot{display:none;}
+    .nav-item{flex-direction:column;font-size:10px;gap:3px;padding:6px 8px;}
+    .main{padding:16px 14px 90px 14px;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ======================= COMPATIBILIDAD DE ALMACENAMIENTO =======================
+   Dentro de Claude, window.storage ya existe (persistencia propia del artefacto).
+   Fuera de Claude (por ejemplo, alojado en Render), no existe ese objeto, así que
+   se define aquí un respaldo con localStorage del navegador para que la app
+   funcione igual de bien de forma independiente. Los datos quedan guardados en
+   el navegador de cada dispositivo/computadora donde se use. */
+if(!window.storage){
+  window.storage = {
+    async get(key){
+      const v = localStorage.getItem('posdata:'+key);
+      if(v===null) throw new Error('not found');
+      return {key, value:v, shared:false};
+    },
+    async set(key, value){
+      localStorage.setItem('posdata:'+key, value);
+      return {key, value, shared:false};
+    },
+    async delete(key){
+      localStorage.removeItem('posdata:'+key);
+      return {key, deleted:true, shared:false};
+    },
+    async list(prefix){
+      const keys = Object.keys(localStorage).filter(k=>k.startsWith('posdata:'+(prefix||''))).map(k=>k.replace('posdata:',''));
+      return {keys, shared:false};
+    }
+  };
+}
+
+/* ======================= ESTADO ======================= */
+const DEFAULT_CONSOLES = [
+  {id:'c-ps4', name:'PS4', rate:1.5},
+  {id:'c-ps5', name:'PS5', rate:2.5},
+  {id:'c-xss', name:'Xbox Series S', rate:2},
+  {id:'c-xsx', name:'Xbox Series X', rate:2.5},
+  {id:'c-switch', name:'Nintendo Switch', rate:1.5},
+];
+const BANKS = ['Banco de Venezuela','Banesco','Mercantil','BBVA Provincial','Banco Bicentenario','BNC (Banco Nacional de Crédito)','Banco Exterior','Bancaribe','Banplus','100% Banco','Banco Activo','Bancrecer','Mi Banco','Banco Caroní','Banco Plaza','Otro'];
+const DURATIONS = [0.5,1,1.5,2,2.5,3,3.5,4,5,6];
+
+let state = {
+  consoles: DEFAULT_CONSOLES.map(c=>({...c})),
+  stations: [],
+  transactions: [],
+  bcv: { rate: 40, updatedAt: null, manual: true }
+};
+let tab = 'estaciones';
+let modal = null; // {type:'start'|'pay'|'station'|'console', ...}
+let dashFilter = 'hoy';
+let saveTimer = null;
+
+/* ======================= STORAGE ======================= */
+async function loadState(){
+  try{
+    const res = await window.storage.get('pos-data', false);
+    if(res && res.value){
+      const parsed = JSON.parse(res.value);
+      state = Object.assign(state, parsed);
+      if(!state.consoles || !state.consoles.length) state.consoles = DEFAULT_CONSOLES.map(c=>({...c}));
+    }
+  }catch(e){ /* sin datos previos */ }
+  render();
+  fetchBcvRate(true);
+  setInterval(()=>{ if(tab==='estaciones') renderMain(); }, 1000);
+}
+function persist(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{ await window.storage.set('pos-data', JSON.stringify(state), false); }
+    catch(e){ showToast('No se pudo guardar los datos localmente.', true); }
+  }, 150);
+}
+
+/* ======================= TASA BCV ======================= */
+async function fetchBcvRate(silent){
+  try{
+    const r = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
+    if(!r.ok) throw new Error('bad response');
+    const data = await r.json();
+    const rate = data.promedio || data.venta || data.compra;
+    if(!rate) throw new Error('sin tasa');
+    state.bcv = { rate: Number(rate), updatedAt: Date.now(), manual:false };
+    persist();
+    render();
+    if(!silent) showToast('Tasa BCV actualizada: '+formatBs(rate)+' Bs/$');
+  }catch(e){
+    if(!silent) showToast('No se pudo obtener la tasa BCV automáticamente. Puedes ingresarla manualmente en Configuración.', true);
+  }
+}
+
+/* ======================= HELPERS ======================= */
+function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+function findConsole(id){ return state.consoles.find(c=>c.id===id); }
+function findStation(id){ return state.stations.find(s=>s.id===id); }
+function formatUsd(n){ return '$'+ (Math.round(n*100)/100).toFixed(2); }
+function formatBs(n){ return (Math.round(n*100)/100).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function toBs(usd){ return usd * (state.bcv.rate||0); }
+function fmtHours(h){
+  if(h===0.5) return '30 min';
+  if(Number.isInteger(h)) return h+' h';
+  return (h)+' h';
+}
+function formatClock(totalSeconds){
+  const neg = totalSeconds < 0;
+  const s = Math.abs(Math.round(totalSeconds));
+  const hh = Math.floor(s/3600), mm = Math.floor((s%3600)/60), ss = s%60;
+  const pad = n=>String(n).padStart(2,'0');
+  const str = hh>0 ? pad(hh)+':'+pad(mm)+':'+pad(ss) : pad(mm)+':'+pad(ss);
+  return (neg?'+':'')+str;
+}
+function consoleColor(name){
+  if(/ps\d|playstation/i.test(name)) return 'var(--blue)';
+  if(/xbox/i.test(name)) return 'var(--green)';
+  if(/switch|nintendo/i.test(name)) return 'var(--pink)';
+  return 'var(--purple)';
+}
+function showToast(msg, isErr){
+  const el = document.createElement('div');
+  el.className = 'toast'+(isErr?' err':'');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 3600);
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ======================= RENDER RAÍZ ======================= */
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="sidebar">
+      <div class="brand">Level<span>Up</span><br>Control de Alquiler</div>
+      ${navItem('estaciones','Estaciones')}
+      ${navItem('dashboard','Dashboard')}
+      ${navItem('historial','Historial')}
+      ${navItem('config','Configuración')}
+      <div class="sidebar-foot">Datos guardados en esta cuenta</div>
+    </div>
+    <div class="main" id="main"></div>
+  `;
+  [...document.querySelectorAll('.nav-item')].forEach(el=>{
+    el.onclick = ()=>{ tab = el.dataset.tab; renderMain(); [...document.querySelectorAll('.nav-item')].forEach(n=>n.classList.remove('active')); el.classList.add('active'); };
+  });
+  renderMain();
+  renderModal();
+}
+function navItem(id,label){
+  return `<div class="nav-item ${tab===id?'active':''}" data-tab="${id}"><span class="dot"></span>${label}</div>`;
+}
+
+function topbar(title){
+  const updated = state.bcv.updatedAt ? new Date(state.bcv.updatedAt).toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'}) : 'sin actualizar';
+  return `
+  <div class="topbar">
+    <div class="page-title">${title}</div>
+    <div class="rate-pill">
+      <span class="lbl">Tasa BCV</span>
+      <span class="val">${formatBs(state.bcv.rate)} Bs/$</span>
+      <span class="updated">${state.bcv.manual? 'manual':'auto · '+updated}</span>
+      <button id="btn-refresh-rate">↻</button>
+    </div>
+  </div>`;
+}
+
+function renderMain(){
+  const main = document.getElementById('main');
+  if(!main) return;
+  if(tab==='estaciones') main.innerHTML = topbar('Estaciones') + stationsHtml();
+  if(tab==='dashboard') main.innerHTML = topbar('Dashboard') + dashboardHtml();
+  if(tab==='historial') main.innerHTML = topbar('Historial') + historyHtml();
+  if(tab==='config') main.innerHTML = topbar('Configuración') + configHtml();
+  bindMainEvents();
+}
+
+/* ======================= ESTACIONES ======================= */
+function stationsHtml(){
+  if(!state.stations.length){
+    return `<div class="empty">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;margin-bottom:6px;">Aún no hay estaciones</div>
+      <div class="muted">Crea una estación por cada consola física disponible en el local.</div>
+      <button class="btn btn-primary" id="btn-new-station">+ Crear estación</button>
+    </div>`;
+  }
+  let cards = state.stations.map(st=>stationCardHtml(st)).join('');
+  return `<div style="margin-bottom:14px;"><button class="btn btn-primary" id="btn-new-station">+ Crear estación</button></div>
+          <div class="grid stations-grid">${cards}</div>`;
+}
+
+function stationCardHtml(st){
+  const c = findConsole(st.consoleId) || {name:'—', rate:0};
+  const color = consoleColor(c.name);
+  let timerBlock = '';
+  let costBlock = '';
+  let actions = '';
+  if(st.status==='busy' && st.session){
+    const s = st.session;
+    const elapsed = (Date.now()-s.startTime)/1000;
+    const remaining = s.plannedHours*3600 - elapsed;
+    const costUsd = s.plannedHours * c.rate;
+    timerBlock = `<div class="timer ${remaining<0?'over':''}">${formatClock(remaining)}</div>
+                  <div class="timer-sub">${remaining<0?'Tiempo excedido':'Restante de '+fmtHours(s.plannedHours)}</div>`;
+    costBlock = `<div class="station-cost">Costo actual: <b>${formatUsd(costUsd)}</b> · <b>${formatBs(toBs(costUsd))} Bs</b></div>`;
+    actions = `
+      <div class="station-actions">
+        <button class="btn btn-ghost btn-sm" data-act="extend" data-id="${st.id}">Extender tiempo</button>
+        <button class="btn btn-primary" data-act="pay" data-id="${st.id}">Cobrar</button>
+      </div>
+      <div style="margin-top:8px;text-align:right;"><a href="#" class="muted" data-act="void" data-id="${st.id}" style="text-decoration:underline;">finalizar sin cobro</a></div>
+    `;
+  } else {
+    timerBlock = `<div class="timer" style="color:var(--text-faint);font-size:22px;">Disponible</div>`;
+    actions = `
+      <div class="station-actions">
+        <button class="btn btn-primary" data-act="startsession" data-id="${st.id}">Iniciar sesión</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="card station-card">
+      <div class="accent-bar" style="background:${color};"></div>
+      <div class="station-head">
+        <div>
+          <div class="station-name">${esc(st.name)}</div>
+          <span class="console-tag" style="background:${color}22;color:${color};">${esc(c.name)} · ${formatUsd(c.rate)}/h</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="status-badge ${st.status==='busy'?'busy':'free'}">${st.status==='busy'?'Ocupada':'Libre'}</span>
+          ${st.status!=='busy' ? `<button class="icon-x" data-act="delstation" data-id="${st.id}" title="Eliminar estación">✕</button>` : ''}
+        </div>
+      </div>
+      ${timerBlock}
+      ${costBlock}
+      ${actions}
+    </div>
+  `;
+}
+
+/* ======================= DASHBOARD ======================= */
+function filteredTx(){
+  if(dashFilter==='todo') return state.transactions;
+  const start = new Date(); start.setHours(0,0,0,0);
+  return state.transactions.filter(t=>t.timestamp >= start.getTime());
+}
+function dashboardHtml(){
+  const txs = filteredTx();
+  const totalUsd = txs.reduce((a,t)=>a+t.costUsd,0);
+  const totalBs = txs.reduce((a,t)=>a+t.costBs,0);
+
+  const byConsole = {};
+  txs.forEach(t=>{
+    byConsole[t.consoleName] = byConsole[t.consoleName] || {usd:0,bs:0,count:0};
+    byConsole[t.consoleName].usd += t.costUsd;
+    byConsole[t.consoleName].bs += t.costBs;
+    byConsole[t.consoleName].count += 1;
+  });
+  const maxConsoleUsd = Math.max(1, ...Object.values(byConsole).map(v=>v.usd));
+
+  const methodLabels = {pago_movil:'Pago Móvil', efectivo_bs:'Efectivo (Bs)', efectivo_usd:'Efectivo ($)', pos_debito:'Punto de venta · Débito', pos_credito:'Punto de venta · Crédito'};
+  const byMethod = {};
+  txs.forEach(t=>{
+    const key = t.method==='efectivo' ? 'efectivo_'+t.paymentDetails.currency.toLowerCase()
+              : t.method==='pos' ? 'pos_'+t.paymentDetails.cardType.toLowerCase()
+              : 'pago_movil';
+    byMethod[key] = byMethod[key] || {usd:0,bs:0,count:0};
+    byMethod[key].usd += t.costUsd;
+    byMethod[key].bs += t.costBs;
+    byMethod[key].count += 1;
+  });
+
+  const consoleRows = Object.entries(byConsole).sort((a,b)=>b[1].usd-a[1].usd).map(([name,v])=>`
+    <tr>
+      <td class="strong">${esc(name)}</td>
+      <td>${v.count}</td>
+      <td class="strong">${formatUsd(v.usd)}</td>
+      <td>${formatBs(v.bs)} Bs</td>
+      <td style="width:120px;"><div class="bar-track"><div class="bar-fill" style="width:${(v.usd/maxConsoleUsd*100)}%;background:${consoleColor(name)};"></div></div></td>
+    </tr>`).join('') || `<tr><td colspan="5" class="muted" style="padding:16px 10px;">Sin datos en este periodo</td></tr>`;
+
+  const methodRows = Object.entries(byMethod).sort((a,b)=>b[1].usd-a[1].usd).map(([key,v])=>`
+    <tr>
+      <td class="strong">${methodLabels[key]||key}</td>
+      <td>${v.count}</td>
+      <td class="strong">${formatUsd(v.usd)}</td>
+      <td>${formatBs(v.bs)} Bs</td>
+    </tr>`).join('') || `<tr><td colspan="4" class="muted" style="padding:16px 10px;">Sin datos en este periodo</td></tr>`;
+
+  return `
+    <div class="filter-toggle" style="margin-bottom:16px;">
+      <button class="${dashFilter==='hoy'?'active':''}" data-filter="hoy">Hoy</button>
+      <button class="${dashFilter==='todo'?'active':''}" data-filter="todo">Todo</button>
+    </div>
+    <div class="kpi-row">
+      <div class="card kpi"><div class="lbl">Recaudado (USD)</div><div class="val usd">${formatUsd(totalUsd)}</div></div>
+      <div class="card kpi"><div class="lbl">Recaudado (Bolívares)</div><div class="val bs">${formatBs(totalBs)} Bs</div></div>
+      <div class="card kpi"><div class="lbl">Sesiones cobradas</div><div class="val">${txs.length}</div></div>
+      <div class="card kpi"><div class="lbl">Estaciones activas</div><div class="val">${state.stations.filter(s=>s.status==='busy').length} / ${state.stations.length}</div></div>
+    </div>
+
+    <div class="section-title">Por consola</div>
+    <div class="card" style="padding:6px 4px;">
+      <table><thead><tr><th>Consola</th><th>Sesiones</th><th>USD</th><th>Bolívares</th><th></th></tr></thead>
+      <tbody>${consoleRows}</tbody></table>
+    </div>
+
+    <div class="section-title">Por método de pago</div>
+    <div class="card" style="padding:6px 4px;">
+      <table><thead><tr><th>Método</th><th>Sesiones</th><th>USD</th><th>Bolívares</th></tr></thead>
+      <tbody>${methodRows}</tbody></table>
+    </div>
+  `;
+}
+
+/* ======================= HISTORIAL ======================= */
+function historyHtml(){
+  const txs = [...state.transactions].sort((a,b)=>b.timestamp-a.timestamp);
+  if(!txs.length) return `<div class="empty">Todavía no se ha registrado ningún cobro.</div>`;
+  const rows = txs.map(t=>{
+    const methodLabel = t.method==='pago_movil' ? 'Pago Móvil'
+      : t.method==='efectivo' ? 'Efectivo ('+ (t.paymentDetails.currency==='USD'?'$':'Bs') +')'
+      : 'Punto de venta · '+(t.paymentDetails.cardType==='debito'?'Débito':'Crédito');
+    const detail = t.method==='pago_movil' ? `${esc(t.paymentDetails.bank)} · ${esc(t.paymentDetails.phone)} · ref ${esc(t.paymentDetails.reference)}`
+      : t.method==='efectivo' ? `Monto recibido: ${t.paymentDetails.currency==='USD'?formatUsd(t.paymentDetails.amount):formatBs(t.paymentDetails.amount)+' Bs'}`
+      : `Monto facturado: ${formatBs(t.paymentDetails.amountBs)} Bs`;
+    return `<tr>
+      <td>${new Date(t.timestamp).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})}</td>
+      <td class="strong">${esc(t.stationName)}${t.type==='extension'?' <span class="muted">(extensión)</span>':''}</td>
+      <td>${esc(t.consoleName)}</td>
+      <td>${fmtHours(t.plannedHours)}</td>
+      <td class="strong">${formatUsd(t.costUsd)}</td>
+      <td>${formatBs(t.costBs)} Bs</td>
+      <td>${methodLabel}<div class="muted">${detail}</div></td>
+      <td><button class="icon-x" data-act="deltx" data-id="${t.id}" title="Eliminar registro">✕</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="card" style="padding:6px 4px;overflow-x:auto;">
+    <table><thead><tr><th>Fecha</th><th>Estación</th><th>Consola</th><th>Tiempo</th><th>USD</th><th>Bs</th><th>Pago</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+/* ======================= CONFIGURACIÓN ======================= */
+function configHtml(){
+  const rows = state.consoles.map(c=>`
+    <div class="cfg-row">
+      <span style="width:10px;height:10px;border-radius:50%;background:${consoleColor(c.name)};flex-shrink:0;"></span>
+      <div class="name">${esc(c.name)}</div>
+      <span class="muted">$/hora</span>
+      <input type="number" step="0.1" min="0" value="${c.rate}" data-console-rate="${c.id}">
+      <button class="icon-x" data-act="delconsole" data-id="${c.id}" title="Eliminar tipo de consola">✕</button>
+    </div>
+  `).join('');
+  return `
+    <div class="section-title" style="margin-top:0;">Tipos de consola y tarifa por hora</div>
+    <div class="card">
+      ${rows}
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px;" id="btn-add-console">+ Añadir tipo de consola</button>
+    </div>
+
+    <div class="section-title">Tasa del dólar (BCV)</div>
+    <div class="card">
+      <div class="field">
+        <label>Tasa actual (Bs por $1)</label>
+        <input type="number" step="0.01" min="0" id="input-manual-rate" value="${state.bcv.rate}">
+        <div class="hint">Se usa para convertir cada cobro de dólares a bolívares. ${state.bcv.manual ? 'Tasa ingresada manualmente.' : 'Última actualización automática: '+new Date(state.bcv.updatedAt).toLocaleString('es-VE')}</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="btn-save-rate">Guardar tasa manual</button>
+        <button class="btn btn-primary" id="btn-refresh-rate-cfg">Actualizar automáticamente</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ======================= EVENTOS ======================= */
+function bindMainEvents(){
+  const byId = (id)=>document.getElementById(id);
+  if(byId('btn-refresh-rate')) byId('btn-refresh-rate').onclick = ()=>fetchBcvRate(false);
+  if(byId('btn-refresh-rate-cfg')) byId('btn-refresh-rate-cfg').onclick = ()=>fetchBcvRate(false);
+  if(byId('btn-save-rate')) byId('btn-save-rate').onclick = ()=>{
+    const v = parseFloat(byId('input-manual-rate').value);
+    if(v>0){ state.bcv = {rate:v, updatedAt: Date.now(), manual:true}; persist(); renderMain(); showToast('Tasa manual guardada.'); }
+  };
+  if(byId('btn-new-station')) byId('btn-new-station').onclick = ()=> openStationModal(null);
+  if(byId('btn-add-console')) byId('btn-add-console').onclick = ()=> openConsoleModal();
+
+  [...document.querySelectorAll('[data-console-rate]')].forEach(inp=>{
+    inp.onchange = ()=>{
+      const c = findConsole(inp.dataset.consoleRate);
+      const v = parseFloat(inp.value);
+      if(c && v>=0){ c.rate = v; persist(); renderMain(); }
+    };
+  });
+  [...document.querySelectorAll('[data-act="delconsole"]')].forEach(b=>{
+    b.onclick = ()=>{
+      const inUse = state.stations.some(s=>s.consoleId===b.dataset.id);
+      if(inUse){ showToast('No se puede eliminar: hay una estación usando este tipo de consola.', true); return; }
+      state.consoles = state.consoles.filter(c=>c.id!==b.dataset.id);
+      persist(); renderMain();
+    };
+  });
+  [...document.querySelectorAll('[data-filter]')].forEach(b=>{
+    b.onclick = ()=>{ dashFilter = b.dataset.filter; renderMain(); };
+  });
+  [...document.querySelectorAll('[data-act="deltx"]')].forEach(b=>{
+    b.onclick = ()=>{ if(confirm('¿Eliminar este registro de cobro?')){ state.transactions = state.transactions.filter(t=>t.id!==b.dataset.id); persist(); renderMain(); } };
+  });
+  [...document.querySelectorAll('[data-act="delstation"]')].forEach(b=>{
+    b.onclick = ()=>{ if(confirm('¿Eliminar esta estación?')){ state.stations = state.stations.filter(s=>s.id!==b.dataset.id); persist(); renderMain(); } };
+  });
+  [...document.querySelectorAll('[data-act="startsession"]')].forEach(b=>{ b.onclick = ()=> openStationModal(b.dataset.id); });
+  [...document.querySelectorAll('[data-act="pay"]')].forEach(b=>{ b.onclick = ()=> openPayModal(b.dataset.id); });
+  [...document.querySelectorAll('[data-act="extend"]')].forEach(b=>{ b.onclick = ()=> openExtendModal(b.dataset.id); });
+  [...document.querySelectorAll('[data-act="void"]')].forEach(b=>{
+    b.onclick = (e)=>{ e.preventDefault(); if(confirm('¿Finalizar la sesión sin registrar cobro?')){ const s=findStation(b.dataset.id); s.status='available'; s.session=null; persist(); renderMain(); } };
+  });
+}
+
+/* ======================= MODALES ======================= */
+function renderModal(){
+  const old = document.querySelector('.overlay');
+  if(old) old.remove();
+  if(!modal) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'overlay';
+  wrap.innerHTML = modal.html;
+  wrap.onclick = (e)=>{ if(e.target===wrap) closeModal(); };
+  document.body.appendChild(wrap);
+  modal.bind && modal.bind();
+}
+function closeModal(){ modal = null; renderModal(); }
+
+function openStationModal(stationId){
+  const existing = stationId ? findStation(stationId) : null;
+  let chosen = 1;
+  let consoleId = existing ? existing.consoleId : (state.consoles[0] && state.consoles[0].id);
+  const rateOf = (id)=> (findConsole(id)||{rate:0}).rate;
+  const optionsHtml = ()=> state.consoles.map(c=>`<option value="${c.id}" ${c.id===consoleId?'selected':''}>${esc(c.name)} — ${formatUsd(c.rate)}/h</option>`).join('');
+  const build = ()=>{
+    const cost = chosen*rateOf(consoleId);
+    return `<div class="modal">
+      <div class="modal-head"><div class="modal-title">${existing?'Iniciar sesión — '+esc(existing.name):'Nueva estación'}</div><button class="close-x" id="m-close">✕</button></div>
+      ${!existing ? `<div class="field"><label>Nombre de la estación</label><input type="text" id="m-name" placeholder="Ej. Estación 1"></div>`:''}
+      <div class="field"><label>Consola</label><select id="m-console">${optionsHtml()}</select></div>
+      <div class="field">
+        <label>Tiempo</label>
+        <div class="seg" id="m-durs">${DURATIONS.map(d=>`<button data-d="${d}" class="${d===chosen?'active':''}">${fmtHours(d)}</button>`).join('')}</div>
+      </div>
+      <div class="field">
+        <label>Tiempo personalizado (múltiplos de 30 min)</label>
+        <input type="number" step="0.5" min="0.5" id="m-custom" value="${chosen}">
+      </div>
+      <div class="summary-box">
+        <div class="summary-row"><span>Tiempo seleccionado</span><span id="m-time-lbl">${fmtHours(chosen)}</span></div>
+        <div class="summary-row summary-total"><span>Costo</span><b id="m-cost-lbl">${formatUsd(cost)} · ${formatBs(toBs(cost))} Bs</b></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="m-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">${existing?'Iniciar sesión':'Crear estación'}</button>
+      </div>
+    </div>`;
+  };
+  modal = {
+    html: build(),
+    bind(){
+      const refresh = ()=>{
+        document.getElementById('m-time-lbl').textContent = fmtHours(chosen);
+        const cost = chosen*rateOf(consoleId);
+        document.getElementById('m-cost-lbl').textContent = formatUsd(cost)+' · '+formatBs(toBs(cost))+' Bs';
+        [...document.querySelectorAll('#m-durs button')].forEach(b=>b.classList.toggle('active', parseFloat(b.dataset.d)===chosen));
+        document.getElementById('m-custom').value = chosen;
+      };
+      document.getElementById('m-close').onclick = closeModal;
+      document.getElementById('m-cancel').onclick = closeModal;
+      document.getElementById('m-console').onchange = (e)=>{ consoleId = e.target.value; refresh(); };
+      [...document.querySelectorAll('#m-durs button')].forEach(b=>{
+        b.onclick = ()=>{ chosen = parseFloat(b.dataset.d); refresh(); };
+      });
+      document.getElementById('m-custom').onchange = (e)=>{
+        let v = Math.round(parseFloat(e.target.value)*2)/2;
+        if(!(v>=0.5)) v = 0.5;
+        chosen = v; refresh();
+      };
+      document.getElementById('m-save').onclick = ()=>{
+        if(!consoleId){ showToast('Primero crea al menos un tipo de consola en Configuración.', true); return; }
+        if(existing){
+          existing.consoleId = consoleId;
+          existing.status = 'busy';
+          existing.session = { startTime: Date.now(), plannedHours: chosen };
+        } else {
+          const nameInput = document.getElementById('m-name').value.trim();
+          const name = nameInput || ('Estación '+(state.stations.length+1));
+          state.stations.push({id:uid(), name, consoleId, status:'busy', session:{ startTime: Date.now(), plannedHours: chosen }});
+        }
+        persist(); closeModal(); renderMain();
+      };
+    }
+  };
+  renderModal();
+}
+
+function openExtendModal(stationId){
+  const st = findStation(stationId);
+  const c = findConsole(st.consoleId);
+  let chosen = 0.5;
+  const build = ()=>{
+    const cost = chosen*c.rate;
+    return `<div class="modal">
+      <div class="modal-head"><div class="modal-title">Extender tiempo — ${esc(st.name)}</div><button class="close-x" id="m-close">✕</button></div>
+      <div class="muted" style="margin-bottom:10px;">${esc(c.name)} · ${formatUsd(c.rate)} por hora</div>
+      <div class="field">
+        <label>Tiempo adicional</label>
+        <div class="seg" id="m-durs">${DURATIONS.map(d=>`<button data-d="${d}" class="${d===chosen?'active':''}">${fmtHours(d)}</button>`).join('')}</div>
+      </div>
+      <div class="field">
+        <label>Tiempo personalizado (múltiplos de 30 min)</label>
+        <input type="number" step="0.5" min="0.5" id="m-custom" value="${chosen}">
+      </div>
+      <div class="summary-box">
+        <div class="summary-row"><span>Tiempo adicional</span><span id="m-time-lbl">${fmtHours(chosen)}</span></div>
+        <div class="summary-row summary-total"><span>Costo de la extensión</span><b id="m-cost-lbl">${formatUsd(cost)} · ${formatBs(toBs(cost))} Bs</b></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="m-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">Continuar al pago</button>
+      </div>
+    </div>`;
+  };
+  modal = {
+    html: build(),
+    bind(){
+      const refresh = ()=>{
+        document.getElementById('m-time-lbl').textContent = fmtHours(chosen);
+        const cost = chosen*c.rate;
+        document.getElementById('m-cost-lbl').textContent = formatUsd(cost)+' · '+formatBs(toBs(cost))+' Bs';
+        [...document.querySelectorAll('#m-durs button')].forEach(b=>b.classList.toggle('active', parseFloat(b.dataset.d)===chosen));
+        document.getElementById('m-custom').value = chosen;
+      };
+      document.getElementById('m-close').onclick = closeModal;
+      document.getElementById('m-cancel').onclick = closeModal;
+      [...document.querySelectorAll('#m-durs button')].forEach(b=>{
+        b.onclick = ()=>{ chosen = parseFloat(b.dataset.d); refresh(); };
+      });
+      document.getElementById('m-custom').onchange = (e)=>{
+        let v = Math.round(parseFloat(e.target.value)*2)/2;
+        if(!(v>=0.5)) v = 0.5;
+        chosen = v; refresh();
+      };
+      document.getElementById('m-save').onclick = ()=>{
+        closeModal();
+        openPayModal(stationId, {extraHours: chosen});
+      };
+    }
+  };
+  renderModal();
+}
+
+function openConsoleModal(){
+  modal = {
+    html: `<div class="modal">
+      <div class="modal-head"><div class="modal-title">Nuevo tipo de consola</div><button class="close-x" id="m-close">✕</button></div>
+      <div class="field"><label>Nombre</label><input type="text" id="m-cname" placeholder="Ej. PS5 Pro"></div>
+      <div class="field"><label>Tarifa por hora (USD)</label><input type="number" step="0.1" min="0" id="m-crate" placeholder="2.5"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="m-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">Añadir</button>
+      </div>
+    </div>`,
+    bind(){
+      document.getElementById('m-close').onclick = closeModal;
+      document.getElementById('m-cancel').onclick = closeModal;
+      document.getElementById('m-save').onclick = ()=>{
+        const name = document.getElementById('m-cname').value.trim();
+        const rate = parseFloat(document.getElementById('m-crate').value);
+        if(!name || !(rate>=0)){ showToast('Completa nombre y tarifa válidos.', true); return; }
+        state.consoles.push({id:uid(), name, rate});
+        persist(); closeModal(); renderMain();
+      };
+    }
+  };
+  renderModal();
+}
+
+function openPayModal(stationId, opts){
+  opts = opts || {};
+  const extraHours = opts.extraHours || null;
+  const st = findStation(stationId);
+  const c = findConsole(st.consoleId);
+  const hoursForCharge = extraHours || st.session.plannedHours;
+  const costUsd = hoursForCharge * c.rate;
+  const costBs = toBs(costUsd);
+  let method = 'pago_movil';
+  const build = ()=>`<div class="modal wide">
+    <div class="modal-head"><div class="modal-title">${extraHours?'Pagar extensión':'Cobrar'} — ${esc(st.name)}</div><button class="close-x" id="m-close">✕</button></div>
+    <div class="summary-box">
+      <div class="summary-row"><span>Consola</span><span>${esc(c.name)}</span></div>
+      <div class="summary-row"><span>${extraHours?'Tiempo adicional':'Tiempo'}</span><span>${fmtHours(hoursForCharge)}</span></div>
+      <div class="summary-row summary-total"><span>Total</span><b>${formatUsd(costUsd)} · ${formatBs(costBs)} Bs</b></div>
+    </div>
+    <div class="paytabs">
+      <button data-m="pago_movil" class="${method==='pago_movil'?'active':''}">Pago Móvil</button>
+      <button data-m="efectivo" class="${method==='efectivo'?'active':''}">Efectivo</button>
+      <button data-m="pos" class="${method==='pos'?'active':''}">Punto de venta</button>
+    </div>
+    <div id="m-fields"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="m-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="m-save">Registrar pago</button>
+    </div>
+  </div>`;
+  function fieldsHtml(){
+    if(method==='pago_movil'){
+      return `
+        <div class="field"><label>Teléfono</label><input type="text" id="f-phone" placeholder="0412-1234567"></div>
+        <div class="field"><label>Referencia (últimos 6 dígitos)</label><input type="text" maxlength="6" id="f-ref" placeholder="123456"></div>
+        <div class="field"><label>Banco</label><select id="f-bank">${BANKS.map(b=>`<option>${b}</option>`).join('')}</select></div>
+      `;
+    }
+    if(method==='efectivo'){
+      return `
+        <div class="field"><label>Moneda</label>
+          <div class="seg" id="f-currency-seg">
+            <button data-c="Bs" class="active">Bolívares</button>
+            <button data-c="USD">Dólares</button>
+          </div>
+        </div>
+        <div class="field"><label>Monto recibido</label><input type="number" step="0.01" id="f-amount" value="${costBs.toFixed(2)}"></div>
+      `;
+    }
+    return `
+      <div class="field"><label>Monto facturado (Bs)</label><input type="number" step="0.01" id="f-amountbs" value="${costBs.toFixed(2)}"></div>
+      <div class="field"><label>Tipo de tarjeta</label>
+        <div class="seg" id="f-card-seg">
+          <button data-t="debito" class="active">Débito</button>
+          <button data-t="credito">Crédito</button>
+        </div>
+      </div>
+    `;
+  }
+  modal = {
+    html: build(),
+    bind(){
+      const renderFields = ()=>{ document.getElementById('m-fields').innerHTML = fieldsHtml(); bindFieldEvents(); };
+      const bindFieldEvents = ()=>{
+        if(method==='efectivo'){
+          let currency='Bs';
+          [...document.querySelectorAll('#f-currency-seg button')].forEach(b=>{
+            b.onclick = ()=>{
+              currency = b.dataset.c;
+              [...document.querySelectorAll('#f-currency-seg button')].forEach(x=>x.classList.toggle('active',x===b));
+              document.getElementById('f-amount').value = currency==='USD' ? costUsd.toFixed(2) : costBs.toFixed(2);
+            };
+          });
+        }
+        if(method==='pos'){
+          [...document.querySelectorAll('#f-card-seg button')].forEach(b=>{
+            b.onclick = ()=> [...document.querySelectorAll('#f-card-seg button')].forEach(x=>x.classList.toggle('active',x===b));
+          });
+        }
+      };
+      document.getElementById('m-close').onclick = closeModal;
+      document.getElementById('m-cancel').onclick = closeModal;
+      [...document.querySelectorAll('.paytabs button')].forEach(b=>{
+        b.onclick = ()=>{ method = b.dataset.m; [...document.querySelectorAll('.paytabs button')].forEach(x=>x.classList.toggle('active',x===b)); renderFields(); };
+      });
+      renderFields();
+      document.getElementById('m-save').onclick = ()=>{
+        let paymentDetails = {};
+        if(method==='pago_movil'){
+          const phone = document.getElementById('f-phone').value.trim();
+          const ref = document.getElementById('f-ref').value.trim();
+          const bank = document.getElementById('f-bank').value;
+          if(!phone || ref.length!==6){ showToast('Verifica el teléfono y que la referencia tenga 6 dígitos.', true); return; }
+          paymentDetails = {phone, reference:ref, bank};
+        } else if(method==='efectivo'){
+          const activeBtn = document.querySelector('#f-currency-seg button.active');
+          const currency = activeBtn ? activeBtn.dataset.c : 'Bs';
+          const amount = parseFloat(document.getElementById('f-amount').value);
+          if(!(amount>=0)){ showToast('Ingresa un monto válido.', true); return; }
+          paymentDetails = {currency: currency==='USD'?'USD':'Bs', amount};
+        } else {
+          const activeBtn = document.querySelector('#f-card-seg button.active');
+          const cardType = activeBtn ? activeBtn.dataset.t : 'debito';
+          const amountBs = parseFloat(document.getElementById('f-amountbs').value);
+          if(!(amountBs>=0)){ showToast('Ingresa un monto facturado válido.', true); return; }
+          paymentDetails = {cardType, amountBs};
+        }
+        state.transactions.push({
+          id: uid(), timestamp: Date.now(),
+          stationName: st.name, consoleName: c.name,
+          plannedHours: hoursForCharge,
+          costUsd, costBs, bcvRateUsed: state.bcv.rate,
+          method, paymentDetails,
+          type: extraHours ? 'extension' : 'sesion'
+        });
+        if(extraHours){
+          st.session.plannedHours += extraHours;
+        } else {
+          st.status = 'available'; st.session = null;
+        }
+        persist(); closeModal(); renderMain();
+        showToast(extraHours ? 'Extensión pagada y añadida al tiempo.' : 'Pago registrado correctamente.');
+      };
+    }
+  };
+  renderModal();
+}
+
+/* ======================= INICIO ======================= */
+loadState();
+</script>
+</body>
+</html>
