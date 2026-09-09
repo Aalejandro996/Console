@@ -339,13 +339,22 @@ async function fetchBcvRate(silent){
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
 function findConsole(id){ return state.consoles.find(c=>c.id===id); }
 function findStation(id){ return state.stations.find(s=>s.id===id); }
-function formatUsd(n){ return '$'+ (Math.round(n*100)/100).toFixed(2); }
+function formatUsd(n){ const sign = n<0?'-':''; return sign+'$'+(Math.abs(Math.round(n*100)/100)).toFixed(2); }
 function formatBs(n){ return (Math.round(n*100)/100).toLocaleString('es-VE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function toBs(usd){ return usd * (state.bcv.rate||0); }
 function fmtHours(h){
   if(h===0.5) return '30 min';
   if(Number.isInteger(h)) return h+' h';
   return (h)+' h';
+}
+/* Formatea una duración arbitraria (no necesariamente múltiplo de 30 min) */
+function fmtDur(hours){
+  if(hours<=0) return '0 min';
+  const totalMin = Math.round(hours*60);
+  const h = Math.floor(totalMin/60), m = totalMin%60;
+  if(h<=0) return m+' min';
+  if(m===0) return h+' h';
+  return h+' h '+m+' min';
 }
 function formatClock(totalSeconds){
   const neg = totalSeconds < 0;
@@ -514,6 +523,9 @@ function stationCardHtml(st){
     actions = `
       <div class="station-actions">
         <button class="btn btn-ghost btn-sm" data-act="extend" data-id="${st.id}">Extender tiempo</button>
+        <button class="btn btn-ghost btn-sm" data-act="swap" data-id="${st.id}">Cambiar consola</button>
+      </div>
+      <div class="station-actions" style="margin-top:8px;">
         <button class="btn btn-primary" data-act="finish" data-id="${st.id}">Finalizar</button>
       </div>
     `;
@@ -620,12 +632,12 @@ function historyHtml(){
     const detail = payments.map(p=> (isMixed? paymentLineLabel(p)+' — ':'') + paymentLineDetail(p)).join(isMixed? '<br>' : '');
     return `<tr>
       <td>${new Date(t.timestamp).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})}</td>
-      <td class="strong">${esc(t.stationName)}${t.type==='extension'?' <span class="muted">(extensión)</span>':''}</td>
-      <td>${esc(t.consoleName)}</td>
-      <td>${fmtHours(t.plannedHours)}</td>
+      <td class="strong">${esc(t.stationName)}${t.type==='extension'?' <span class="muted">(extensión)</span>':t.type==='swap'?' <span class="muted">(cambio de consola)</span>':''}</td>
+      <td>${t.type==='swap' ? esc(t.swapFrom)+' → '+esc(t.swapTo) : esc(t.consoleName)}</td>
+      <td>${fmtDur(t.plannedHours)}</td>
       <td class="strong">${formatUsd(t.costUsd)}</td>
       <td>${formatBs(t.costBs)} Bs</td>
-      <td>${methodLabel}<div class="muted">${detail}</div></td>
+      <td>${payments.length? methodLabel+'<div class="muted">'+detail+'</div>' : '<span class="muted">Sin ajuste monetario</span>'}</td>
       <td><button class="icon-x" data-act="deltx" data-id="${t.id}" title="Eliminar registro">✕</button></td>
     </tr>`;
   }).join('');
@@ -726,7 +738,7 @@ function exportReportExcel(){
     txs.sort((a,b)=>a.timestamp-b.timestamp).map(t=>[
       new Date(t.timestamp).toLocaleString('es-VE'),
       t.stationName, t.consoleName,
-      t.type==='extension' ? 'Extensión' : 'Sesión',
+      t.type==='extension' ? 'Extensión' : t.type==='swap' ? 'Cambio de consola' : 'Sesión',
       t.plannedHours, Number(t.costUsd.toFixed(2)), Number(t.costBs.toFixed(2)),
       getPayments(t).map(p=>paymentLineLabel(p)+' '+formatUsd(p.amountUsd)).join(' + ')
     ])
@@ -814,6 +826,7 @@ function bindMainEvents(){
   });
   [...document.querySelectorAll('[data-act="startsession"]')].forEach(b=>{ b.onclick = ()=> openStationModal(b.dataset.id); });
   [...document.querySelectorAll('[data-act="extend"]')].forEach(b=>{ b.onclick = ()=> openExtendModal(b.dataset.id); });
+  [...document.querySelectorAll('[data-act="swap"]')].forEach(b=>{ b.onclick = ()=> openSwapConsoleModal(b.dataset.id); });
   [...document.querySelectorAll('[data-act="finish"]')].forEach(b=>{
     b.onclick = ()=>{ if(confirm('¿Finalizar esta sesión? La estación quedará libre.')){ const s=findStation(b.dataset.id); s.status='available'; s.session=null; persist(); renderMain(); } };
   });
@@ -975,6 +988,293 @@ function openExtendModal(stationId){
           txType: 'extension',
           applyEffect(){ st.session.plannedHours += chosen; }
         });
+      };
+    }
+  };
+  renderModal();
+}
+
+function openSwapConsoleModal(stationId){
+  const st = findStation(stationId);
+  const oldConsole = findConsole(st.consoleId);
+  const oldRate = oldConsole.rate;
+  const elapsedHours = (Date.now()-st.session.startTime)/3600000;
+  const R_hours = Math.max(0, st.session.plannedHours - elapsedHours);
+  const otherConsoles = state.consoles.filter(c=>c.id!==st.consoleId);
+  if(!otherConsoles.length){ showToast('Agrega otro tipo de consola en Configuración para poder hacer el cambio.', true); return; }
+
+  const rateOf = id => (findConsole(id)||{rate:0}).rate;
+  const round2 = n => Math.round(n*100)/100;
+
+  let newConsoleId = otherConsoles[0].id;
+  let keepRemaining = true;
+  let wantExtra = false;
+  let extraHours = 1;
+  let lineSeq = 0;
+  let lines = [];
+
+  function computeD(){
+    const newRate = rateOf(newConsoleId);
+    const kept = keepRemaining ? R_hours : 0;
+    const extra = wantExtra ? extraHours : 0;
+    return (kept+extra)*newRate - R_hours*oldRate;
+  }
+  function newPlannedHoursVal(){
+    return (keepRemaining?R_hours:0) + (wantExtra?extraHours:0);
+  }
+  function lineUsd(l){ return (l.method==='efectivo' && l.currency==='USD') ? (l.amount||0) : (l.amount||0)/(state.bcv.rate||1); }
+  function coveredUsd(){ return lines.reduce((s,l)=>s+lineUsd(l),0); }
+  function defaultLine(amountBs){
+    return { id: lineSeq++, method:'pago_movil', currency:'Bs', amount: round2(amountBs), cardType:'debito', phone:'', reference:'', bank:BANKS[0] };
+  }
+  function resetLines(){
+    const target = Math.abs(computeD());
+    lineSeq = 0;
+    lines = target>0.01 ? [defaultLine(toBs(target))] : [];
+  }
+  resetLines();
+
+  function lineFieldsHtml(l){
+    if(l.method==='pago_movil'){
+      return `
+        <div class="field"><label>Teléfono</label><input type="text" data-f="phone" value="${esc(l.phone)}" placeholder="0412-1234567"></div>
+        <div class="field"><label>Referencia (últimos 6 dígitos)</label><input type="text" maxlength="6" data-f="reference" value="${esc(l.reference)}" placeholder="123456"></div>
+        <div class="field"><label>Banco</label><select data-f="bank">${BANKS.map(b=>`<option ${b===l.bank?'selected':''}>${b}</option>`).join('')}</select></div>
+        <div class="field"><label>Monto (Bs)</label><input type="number" step="0.01" min="0" data-f="amount" value="${l.amount}"></div>
+      `;
+    }
+    if(l.method==='efectivo'){
+      return `
+        <div class="field"><label>Moneda</label>
+          <div class="seg" data-segfor="currency">
+            <button data-v="Bs" class="${l.currency==='Bs'?'active':''}">Bolívares</button>
+            <button data-v="USD" class="${l.currency==='USD'?'active':''}">Dólares</button>
+          </div>
+        </div>
+        <div class="field"><label>Monto (${l.currency==='USD'?'$':'Bs'})</label><input type="number" step="0.01" min="0" data-f="amount" value="${l.amount}"></div>
+      `;
+    }
+    return `
+      <div class="field"><label>Tipo de tarjeta</label>
+        <div class="seg" data-segfor="cardType">
+          <button data-v="debito" class="${l.cardType==='debito'?'active':''}">Débito</button>
+          <button data-v="credito" class="${l.cardType==='credito'?'active':''}">Crédito</button>
+        </div>
+      </div>
+      <div class="field"><label>Monto (Bs)</label><input type="number" step="0.01" min="0" data-f="amount" value="${l.amount}"></div>
+    `;
+  }
+  function lineBlockHtml(l){
+    return `<div class="card" style="padding:12px;margin-bottom:10px;background:var(--surface-2);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+        <div class="paytabs" style="flex:1;margin-bottom:0;" data-methodfor="${l.id}">
+          <button data-v="pago_movil" class="${l.method==='pago_movil'?'active':''}">Pago Móvil</button>
+          <button data-v="efectivo" class="${l.method==='efectivo'?'active':''}">Efectivo</button>
+          <button data-v="pos" class="${l.method==='pos'?'active':''}">Punto de venta</button>
+        </div>
+        ${lines.length>1?`<button class="icon-x" data-removeline="${l.id}">✕</button>`:''}
+      </div>
+      <div data-fieldswrap="${l.id}">${lineFieldsHtml(l)}</div>
+    </div>`;
+  }
+
+  function summaryHtml(){
+    const D = computeD();
+    const npH = newPlannedHoursVal();
+    let settleLine;
+    if(D>0.01) settleLine = `<div class="summary-row" style="color:var(--rose);"><span>Se debe cobrar</span><b>${formatUsd(D)} · ${formatBs(toBs(D))} Bs</b></div>`;
+    else if(D<-0.01) settleLine = `<div class="summary-row" style="color:var(--mint);"><span>Se debe reembolsar al cliente</span><b>${formatUsd(-D)} · ${formatBs(-toBs(D))} Bs</b></div>`;
+    else settleLine = `<div class="summary-row" style="color:var(--mint);"><span>Sin diferencia que cobrar o reembolsar</span><span>✓</span></div>`;
+
+    let coverLine = '';
+    if(Math.abs(D)>0.01){
+      const remaining = Math.abs(D) - coveredUsd();
+      if(remaining>0.01) coverLine = `<div class="summary-row" style="color:var(--rose);"><span>Falta por ${D>0?'cobrar':'reembolsar'}</span><b>${formatUsd(remaining)} · ${formatBs(toBs(remaining))} Bs</b></div>`;
+      else if(remaining<-0.01) coverLine = `<div class="summary-row" style="color:var(--mint);"><span>Sobra (vuelto)</span><b>${formatUsd(-remaining)} · ${formatBs(toBs(-remaining))} Bs</b></div>`;
+      else coverLine = `<div class="summary-row" style="color:var(--mint);"><span>Cubierto completamente ✓</span><span></span></div>`;
+    }
+    return `
+      <div class="summary-row"><span>Consola actual</span><span>${esc(oldConsole.name)} (${formatUsd(oldRate)}/h)</span></div>
+      <div class="summary-row"><span>Tiempo restante actual</span><span>${fmtDur(R_hours)}</span></div>
+      <div class="summary-row"><span>Nueva consola</span><span>${esc(findConsole(newConsoleId).name)} (${formatUsd(rateOf(newConsoleId))}/h)</span></div>
+      <div class="summary-row summary-total"><span>Nueva duración de sesión</span><b>${fmtDur(npH)}</b></div>
+      ${settleLine}
+      ${coverLine}
+    `;
+  }
+
+  function build(){
+    const D = computeD();
+    const needsSettle = Math.abs(D) > 0.01;
+    const npH = newPlannedHoursVal();
+    return `<div class="modal wide">
+      <div class="modal-head"><div class="modal-title">Cambiar consola — ${esc(st.name)}</div><button class="close-x" id="m-close">✕</button></div>
+      <div class="field"><label>Nueva consola</label>
+        <select id="m-newconsole">${otherConsoles.map(c=>`<option value="${c.id}" ${c.id===newConsoleId?'selected':''}>${esc(c.name)} — ${formatUsd(c.rate)}/h</option>`).join('')}</select>
+      </div>
+      <div class="field">
+        <label>Tiempo restante actual (${fmtDur(R_hours)})</label>
+        <div class="seg" id="m-keep">
+          <button data-v="1" class="${keepRemaining?'active':''}">Mantener</button>
+          <button data-v="0" class="${!keepRemaining?'active':''}">Cancelar (reembolsar)</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>¿Desea tiempo adicional?</label>
+        <div class="seg" id="m-extra-toggle">
+          <button data-v="0" class="${!wantExtra?'active':''}">No</button>
+          <button data-v="1" class="${wantExtra?'active':''}">Sí</button>
+        </div>
+      </div>
+      ${wantExtra ? `<div class="field">
+        <label>Tiempo adicional</label>
+        <div class="seg" id="m-extra-durs">${DURATIONS.map(d=>`<button data-d="${d}" class="${d===extraHours?'active':''}">${fmtHours(d)}</button>`).join('')}</div>
+      </div>
+      <div class="field"><label>Personalizado (múltiplos de 30 min)</label><input type="number" step="0.5" min="0.5" id="m-extra-custom" value="${extraHours}"></div>` : ''}
+      <div class="summary-box" id="m-summary">${summaryHtml()}</div>
+      ${needsSettle ? `
+        <div id="m-lines">${lines.map(l=>lineBlockHtml(l)).join('')}</div>
+        <button class="btn btn-ghost btn-sm btn-block" id="m-addline" style="margin-bottom:14px;">+ Agregar otro método de ${D>0?'pago':'reembolso'} (mixto)</button>
+      ` : ''}
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="m-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="m-save">${npH<=0 ? 'Cambiar y finalizar estación' : 'Aplicar cambio de consola'}</button>
+      </div>
+    </div>`;
+  }
+
+  modal = {
+    html: build(),
+    bind(){
+      const refresh = ()=>{ modal.html = build(); renderModal(); };
+      const refreshCore = ()=>{ resetLines(); refresh(); };
+
+      document.getElementById('m-close').onclick = closeModal;
+      document.getElementById('m-cancel').onclick = closeModal;
+      document.getElementById('m-newconsole').onchange = e=>{ newConsoleId = e.target.value; refreshCore(); };
+      [...document.querySelectorAll('#m-keep button')].forEach(b=>{
+        b.onclick = ()=>{ keepRemaining = b.dataset.v==='1'; refreshCore(); };
+      });
+      [...document.querySelectorAll('#m-extra-toggle button')].forEach(b=>{
+        b.onclick = ()=>{ wantExtra = b.dataset.v==='1'; refreshCore(); };
+      });
+      if(document.getElementById('m-extra-durs')){
+        [...document.querySelectorAll('#m-extra-durs button')].forEach(b=>{
+          b.onclick = ()=>{ extraHours = parseFloat(b.dataset.d); refreshCore(); };
+        });
+      }
+      if(document.getElementById('m-extra-custom')){
+        document.getElementById('m-extra-custom').onchange = e=>{
+          let v = Math.round(parseFloat(e.target.value)*2)/2;
+          if(!(v>=0.5)) v = 0.5;
+          extraHours = v; refreshCore();
+        };
+      }
+      if(document.getElementById('m-addline')){
+        document.getElementById('m-addline').onclick = ()=>{
+          const target = Math.abs(computeD());
+          const remainingUsd = Math.max(0, target - coveredUsd());
+          lines.push(defaultLine(toBs(remainingUsd)));
+          refresh();
+        };
+      }
+      [...document.querySelectorAll('[data-methodfor]')].forEach(segEl=>{
+        const id = Number(segEl.dataset.methodfor);
+        [...segEl.querySelectorAll('button')].forEach(b=>{
+          b.onclick = ()=>{
+            const line = lines.find(x=>x.id===id);
+            const preUsd = lineUsd(line);
+            line.method = b.dataset.v;
+            if(line.method==='efectivo') line.currency='Bs';
+            if(line.method==='pos') line.cardType='debito';
+            const otherUsd = coveredUsd() - preUsd;
+            const target = Math.abs(computeD());
+            const remainingExcl = Math.max(0, target - otherUsd);
+            line.amount = round2( (line.method==='efectivo' && line.currency==='USD') ? remainingExcl : toBs(remainingExcl) );
+            refresh();
+          };
+        });
+      });
+      [...document.querySelectorAll('[data-removeline]')].forEach(b=>{
+        b.onclick = ()=>{ lines = lines.filter(l=>l.id!==Number(b.dataset.removeline)); refresh(); };
+      });
+      [...document.querySelectorAll('[data-fieldswrap]')].forEach(wrap=>{
+        const id = Number(wrap.dataset.fieldswrap);
+        const line = lines.find(x=>x.id===id);
+        const phoneInp = wrap.querySelector('[data-f="phone"]');
+        if(phoneInp) phoneInp.onchange = e=>{ line.phone = e.target.value; };
+        const refInp = wrap.querySelector('[data-f="reference"]');
+        if(refInp) refInp.onchange = e=>{ line.reference = e.target.value; };
+        const bankSel = wrap.querySelector('[data-f="bank"]');
+        if(bankSel) bankSel.onchange = e=>{ line.bank = e.target.value; };
+        const amountInp = wrap.querySelector('[data-f="amount"]');
+        if(amountInp) amountInp.onchange = e=>{ line.amount = parseFloat(e.target.value)||0; refresh(); };
+        const curSeg = wrap.querySelector('[data-segfor="currency"]');
+        if(curSeg){
+          [...curSeg.querySelectorAll('button')].forEach(b=>{
+            b.onclick = ()=>{
+              const preUsd = lineUsd(line);
+              line.currency = b.dataset.v;
+              const otherUsd = coveredUsd() - preUsd;
+              const target = Math.abs(computeD());
+              const remainingExcl = Math.max(0, target - otherUsd);
+              line.amount = round2( line.currency==='USD' ? remainingExcl : toBs(remainingExcl) );
+              refresh();
+            };
+          });
+        }
+        const cardSeg = wrap.querySelector('[data-segfor="cardType"]');
+        if(cardSeg){
+          [...cardSeg.querySelectorAll('button')].forEach(b=>{ b.onclick = ()=>{ line.cardType = b.dataset.v; refresh(); }; });
+        }
+      });
+
+      document.getElementById('m-save').onclick = ()=>{
+        const D = computeD();
+        const npH = newPlannedHoursVal();
+        if(Math.abs(D)>0.01){
+          for(const l of lines){
+            if(l.method==='pago_movil' && (!l.phone.trim() || l.reference.trim().length!==6)){
+              showToast('Revisa el teléfono y que la referencia tenga 6 dígitos en Pago Móvil.', true); return;
+            }
+            if(!(l.amount>=0)){ showToast('Ingresa montos válidos en cada método.', true); return; }
+          }
+          const target = Math.abs(D);
+          const remaining = target - coveredUsd();
+          if(remaining > 0.02){ showToast('Los montos ingresados no cubren el total de '+(D>0?'cobro':'reembolso')+'. Falta '+formatUsd(remaining)+'.', true); return; }
+        }
+        const sign = D<0 ? -1 : 1;
+        const payments = lines.filter(l=>l.amount>0).map(l=>{
+          const amountUsd = lineUsd(l)*sign;
+          const amountBsRaw = (l.method==='efectivo' && l.currency==='USD') ? toBs(l.amount) : l.amount;
+          const amountBs = amountBsRaw*sign;
+          let details = {};
+          if(l.method==='pago_movil') details = {phone:l.phone.trim(), reference:l.reference.trim(), bank:l.bank};
+          else if(l.method==='efectivo') details = {currency:l.currency, amount:l.amount};
+          else details = {cardType:l.cardType, amountBs:l.amount};
+          return {method:l.method, amountUsd, amountBs, details};
+        });
+        const newConsole = findConsole(newConsoleId);
+        if(Math.abs(D)>0.01){
+          state.transactions.push({
+            id: uid(), timestamp: Date.now(),
+            stationName: st.name, consoleName: newConsole.name,
+            plannedHours: npH,
+            costUsd: D, costBs: toBs(D), bcvRateUsed: state.bcv.rate,
+            type: 'swap', swapFrom: oldConsole.name, swapTo: newConsole.name,
+            payments
+          });
+        }
+        st.consoleId = newConsoleId;
+        if(npH>0){
+          st.status = 'busy';
+          st.session = { startTime: Date.now(), plannedHours: npH };
+        } else {
+          st.status = 'available';
+          st.session = null;
+        }
+        persist(); closeModal(); renderMain();
+        showToast(D>0.01 ? 'Diferencia cobrada y consola cambiada.' : D<-0.01 ? 'Reembolso registrado y consola cambiada.' : 'Consola cambiada correctamente.');
       };
     }
   };
