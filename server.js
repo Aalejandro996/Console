@@ -48,7 +48,8 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"]
+      // AÑADIDO: URL externa para permitir consultar la tasa del dólar
+      connectSrc: ["'self'", "https://ve.dolarapi.com"]
     }
   }
 }));
