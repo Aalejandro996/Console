@@ -23,19 +23,29 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-/* ================= Seed del usuario maestro (una sola vez) ================= */
-(function seedMasterUser() {
-  const existing = db.prepare('SELECT * FROM users WHERE id = 1').get();
-  if (existing) return;
-  const username = process.env.MASTER_USERNAME;
-  const passwordHash = process.env.MASTER_PASSWORD_HASH;
-  if (!username || !passwordHash) {
-    console.error('ERROR: define MASTER_USERNAME y MASTER_PASSWORD_HASH en las variables de entorno para crear el usuario maestro.');
-    process.exit(1);
+/* ================= Inicialización de DB y Seed ================= */
+(async function initialize() {
+  try {
+    // 1. Crear tablas si no existen
+    await db.initDb();
+    
+    // 2. Crear usuario maestro si no existe
+    const existing = await db.query('SELECT * FROM users WHERE id = 1');
+    if (existing.rows.length > 0) return;
+    
+    const username = process.env.MASTER_USERNAME;
+    const passwordHash = process.env.MASTER_PASSWORD_HASH;
+    if (!username || !passwordHash) {
+      console.error('ERROR: define MASTER_USERNAME y MASTER_PASSWORD_HASH en las variables de entorno para crear el usuario maestro.');
+      process.exit(1);
+    }
+    
+    await db.query('INSERT INTO users (id, username, password_hash, updated_at) VALUES (1, $1, $2, $3)',
+      [username, passwordHash, new Date().toISOString()]);
+    console.log(`Usuario maestro "${username}" creado.`);
+  } catch (err) {
+    console.error('Error inicializando base de datos PostgreSQL:', err);
   }
-  db.prepare('INSERT INTO users (id, username, password_hash, updated_at) VALUES (1, ?, ?, ?)')
-    .run(username, passwordHash, new Date().toISOString());
-  console.log(`Usuario maestro "${username}" creado.`);
 })();
 
 /* ================= Seguridad general ================= */
@@ -97,18 +107,28 @@ const aiLimiter = rateLimit({
 });
 
 /* ================= Auth routes ================= */
-app.post('/api/login', loginLimiter, (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
     return res.status(400).json({ error: 'Usuario y contraseña son requeridos.' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
-  const ok = user && user.username === username && verifyPassword(password, user.password_hash);
-  db.prepare('INSERT INTO login_attempts (ip, attempted_at, success) VALUES (?, ?, ?)')
-    .run(req.ip, new Date().toISOString(), ok ? 1 : 0);
-  if (!ok) return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
-  setCookie(res, signSession(user.username));
-  res.json({ ok: true, username: user.username });
+  
+  try {
+    const result = await db.query('SELECT * FROM users WHERE id = 1');
+    const user = result.rows[0];
+    
+    const ok = user && user.username === username && verifyPassword(password, user.password_hash);
+    await db.query('INSERT INTO login_attempts (ip, attempted_at, success) VALUES ($1, $2, $3)',
+      [req.ip, new Date().toISOString(), ok ? 1 : 0]);
+      
+    if (!ok) return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
+    
+    setCookie(res, signSession(user.username));
+    res.json({ ok: true, username: user.username });
+  } catch (e) {
+    console.error('Error en login:', e);
+    res.status(500).json({ error: 'Error interno del servidor.' });
+  }
 });
 
 app.post('/api/logout', (req, res) => {
@@ -120,74 +140,113 @@ app.get('/api/me', requireAuth, (req, res) => {
   res.json({ username: req.user.sub });
 });
 
-app.post('/api/change-password', requireAuth, (req, res) => {
+app.post('/api/change-password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (typeof newPassword !== 'string' || newPassword.length < 10) {
     return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 10 caracteres.' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE id = 1').get();
-  if (!verifyPassword(currentPassword, user.password_hash)) {
-    return res.status(401).json({ error: 'La contraseña actual no es correcta.' });
+  
+  try {
+    const result = await db.query('SELECT * FROM users WHERE id = 1');
+    const user = result.rows[0];
+    
+    if (!verifyPassword(currentPassword, user.password_hash)) {
+      return res.status(401).json({ error: 'La contraseña actual no es correcta.' });
+    }
+    
+    const newHash = hashPassword(newPassword);
+    await db.query('UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = 1',
+      [newHash, new Date().toISOString()]);
+      
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error cambiando contraseña:', e);
+    res.status(500).json({ error: 'Error interno del servidor.' });
   }
-  const newHash = hashPassword(newPassword);
-  db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = 1')
-    .run(newHash, new Date().toISOString());
-  res.json({ ok: true });
 });
 
-/* ================= Estado de la aplicación (consolas, estaciones, transacciones, tasa BCV) ================= */
-app.get('/api/state', requireAuth, (req, res) => {
-  const row = db.prepare('SELECT data FROM app_state WHERE id = 1').get();
-  res.json(row ? JSON.parse(row.data) : null);
+/* ================= Estado de la aplicación ================= */
+app.get('/api/state', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query('SELECT data FROM app_state WHERE id = 1');
+    const row = result.rows[0];
+    res.json(row ? JSON.parse(row.data) : null);
+  } catch (e) {
+    console.error('Error obteniendo estado:', e);
+    res.status(500).json({ error: 'Error obteniendo estado.' });
+  }
 });
 
-app.put('/api/state', requireAuth, (req, res) => {
+app.put('/api/state', requireAuth, async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Estado inválido.' });
+  
   const json = JSON.stringify(body);
   if (json.length > 8 * 1024 * 1024) return res.status(413).json({ error: 'El estado excede el tamaño permitido.' });
-  db.prepare(`
-    INSERT INTO app_state (id, data, updated_at) VALUES (1, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-  `).run(json, new Date().toISOString());
-  res.json({ ok: true });
+  
+  try {
+    await db.query(`
+      INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, $2)
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+    `, [json, new Date().toISOString()]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error guardando estado:', e);
+    res.status(500).json({ error: 'Error guardando estado.' });
+  }
 });
 
-/* ================= Registro de uso (para el asistente de IA) ================= */
-app.post('/api/usage-log', requireAuth, (req, res) => {
+/* ================= Registro de uso ================= */
+app.post('/api/usage-log', requireAuth, async (req, res) => {
   const { consoleName, date, startTime, endTime } = req.body || {};
   if (![consoleName, date, startTime, endTime].every(v => typeof v === 'string' && v.length > 0 && v.length < 80)) {
     return res.status(400).json({ error: 'Datos de uso inválidos.' });
   }
-  db.prepare(`
-    INSERT INTO usage_log (console_name, date, start_time, end_time, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(consoleName, date, startTime, endTime, new Date().toISOString());
-  res.json({ ok: true });
+  
+  try {
+    await db.query(`
+      INSERT INTO usage_log (console_name, date, start_time, end_time, created_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [consoleName, date, startTime, endTime, new Date().toISOString()]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error registrando uso:', e);
+    res.status(500).json({ error: 'Error registrando uso.' });
+  }
 });
 
 /* ================= Asistente de IA ================= */
-app.get('/api/ai/insights', requireAuth, (req, res) => {
-  const cache = db.prepare('SELECT * FROM ai_cache WHERE id = 1').get();
-  res.json(cache || null);
+app.get('/api/ai/insights', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM ai_cache WHERE id = 1');
+    res.json(result.rows[0] || null);
+  } catch (e) {
+    console.error('Error obteniendo insights:', e);
+    res.status(500).json({ error: 'Error obteniendo insights.' });
+  }
 });
 
 app.post('/api/ai/insights/generate', requireAuth, aiLimiter, async (req, res) => {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const records = db.prepare('SELECT * FROM usage_log WHERE end_time >= ? ORDER BY start_time ASC').all(sevenDaysAgo);
+    const result = await db.query('SELECT * FROM usage_log WHERE end_time >= $1 ORDER BY start_time ASC', [sevenDaysAgo]);
+    const records = result.rows;
+    
     const MIN_RECORDS = 5;
     if (records.length < MIN_RECORDS) {
       return res.status(422).json({ error: `Se necesitan al menos ${MIN_RECORDS} sesiones registradas en los últimos 7 días (hay ${records.length}).` });
     }
+    
     const insights = await generateInsights(records);
     const generatedAt = new Date().toISOString();
-    db.prepare(`
+    
+    await db.query(`
       INSERT INTO ai_cache (id, generated_at, records_analyzed, busiest_slot, tournament_suggestion, loyalty_idea)
-      VALUES (1, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET generated_at=excluded.generated_at, records_analyzed=excluded.records_analyzed,
-        busiest_slot=excluded.busiest_slot, tournament_suggestion=excluded.tournament_suggestion, loyalty_idea=excluded.loyalty_idea
-    `).run(generatedAt, records.length, insights.busiest_slot, insights.tournament_suggestion, insights.loyalty_idea);
+      VALUES (1, $1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO UPDATE SET generated_at=EXCLUDED.generated_at, records_analyzed=EXCLUDED.records_analyzed,
+        busiest_slot=EXCLUDED.busiest_slot, tournament_suggestion=EXCLUDED.tournament_suggestion, loyalty_idea=EXCLUDED.loyalty_idea
+    `, [generatedAt, records.length, insights.busiest_slot, insights.tournament_suggestion, insights.loyalty_idea]);
+    
     res.json({ generated_at: generatedAt, records_analyzed: records.length, ...insights });
   } catch (e) {
     console.error('Error generando insights de IA:', e.message);
