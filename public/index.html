@@ -504,7 +504,7 @@ function render(){
       ${navItem('estaciones','Estaciones')}
       ${navItem('dashboard','Dashboard')}
       ${navItem('reportes','Reportes')}
-      ${navItem('ia','Asistente IA')}
+      ${navItem('ia','Arcade Assistant')}
       ${navItem('historial','Historial')}
       ${navItem('config','Configuración')}
       <div class="sidebar-foot">
@@ -547,7 +547,7 @@ function renderMain(){
   if(tab==='reportes') main.innerHTML = topbar('Reportes') + reportsHtml();
   if(tab==='historial') main.innerHTML = topbar('Historial') + historyHtml();
   if(tab==='config') main.innerHTML = topbar('Configuración') + configHtml();
-  if(tab==='ia') main.innerHTML = topbar('Asistente IA') + aiHtml();
+  if(tab==='ia') main.innerHTML = topbar('Arcade Assistant') + aiHtml();
   bindMainEvents();
 }
 
