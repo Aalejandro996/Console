@@ -1,4 +1,4 @@
-# Argame Paseo Mirandino — Control de alquiler con backend, base de datos y asistente de IA
+# DomusHack — Ventas, Servicio Técnico, Inventario y Alquiler de Consolas
 
 Backend en Node.js/Express con base de datos SQLite, un usuario maestro y un
 asistente de IA que analiza el uso de los últimos 7 días para sugerir:
@@ -118,7 +118,29 @@ prueba: los datos pueden perderse en un redeploy o reinicio del servicio.
 - Considera un servicio de backups periódicos del archivo SQLite (o migrar a
   Postgres) para no depender de un solo archivo.
 
-## 6. Asistente de IA — cómo funciona
+## 6. Módulos de tienda (Inventario, Ventas, Servicio Técnico)
+
+Estos módulos usan el mismo mecanismo de guardado que el resto de la app
+(el bloque `app_state` en SQLite) — no requieren tablas ni endpoints nuevos.
+
+- **Inventario**: alta/edición manual de productos (consolas, videojuegos,
+  accesorios, repuestos), con costo, precio, condición y stock. Incluye
+  botón para descargar una plantilla `.xlsx` y otro para importar un Excel
+  ya existente del cliente (empareja por SKU: si existe, suma stock y
+  actualiza precio; si no, crea el producto). Todo el parseo ocurre en el
+  navegador con SheetJS, no se sube el archivo a ningún servidor externo.
+- **Ventas**: registra una venta con carrito de productos (descuenta stock
+  automáticamente), permite aplicar un "cambio" (trade-in: un artículo
+  usado que el cliente entrega como parte de pago, con opción de sumarlo
+  al inventario), y usa el mismo sistema de pago mixto (Pago Móvil /
+  Efectivo / Punto de venta) que el resto de la app. Genera una factura
+  numerada, con vista para imprimir.
+- **Servicio Técnico**: tickets de reparación con estado (Recibido →
+  Diagnóstico → Reparación → Listo → Entregado), y un botón "Facturar" que
+  abre una venta prellenada con el servicio, dejando el ticket enlazado a
+  su factura.
+
+## 7. Asistente de IA — cómo funciona
 
 Cada vez que finalizas una sesión o cambias la consola de una estación, la
 app guarda un registro (`consola, fecha, hora de inicio, hora de fin`) en la
