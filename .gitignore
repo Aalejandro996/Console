@@ -1,3 +1,8 @@
 .env
 node_modules/
 data/
+
+# Reportes y archivos del sistema
+*.xlsx
+*.csv
+.DS_Store
